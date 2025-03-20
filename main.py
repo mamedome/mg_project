@@ -108,3 +108,35 @@ def get_applications():
         'description': appl['description'],
         'has_vulnerabilities': any(len(d['vulnerabilities']) > 0 for d in appl['dependencies'])
     } for appl in applications]
+
+
+@app.get("/applications/{app_id}/dependencies", response_model=List[Dependency])
+def get_app_dependencies(app_id: str):
+    appl = next((appl for appl in applications if appl['id'] == app_id), None)
+    if not appl:
+        raise HTTPException(404, "Application not found")
+    return [{'name': d['name'],
+             'version': d['version'],
+             'vulnerabilities': d['vulnerabilities']} for d in appl['dependencies']]
+
+
+@app.get("/dependencies", response_model=List[Dependency])
+def get_dependencies():
+    return [{'name': d['name'],
+             'version': d['version'],
+             'vulnerabilities': d['vulnerabilities']} for d in all_dependencies.values()]
+
+
+@app.get("/dependencies/{name}", response_model=List[DependencyDetail])
+def get_dependency_details(name: str):
+    dependencies = all_dependencies.get(name)
+    if not dependencies:
+        raise HTTPException(404, "Dependency not found")
+
+    return [{
+        'name': dep['name'],
+        'version': dep['version'],
+        'vulnerabilities': dep['vulnerabilities'],
+        'used_in': [appl['name'] for appl in applications
+                    if any(d['name'] == dep['name'] and d['version'] == dep['version'] for d in appl['dependencies'])]
+    } for dep in dependencies]
