@@ -98,3 +98,13 @@ async def create_application(name: str = Form(...),
         'description': description,
         'has_vulnerabilities': any(len(d['vulnerabilities']) > 0 for d in app_dependencies)
     }
+
+
+@app.get("/applications", response_model=List[ApplicationResponse])
+def get_applications():
+    return [{
+        'app_id': appl['id'],
+        'name': appl['name'],
+        'description': appl['description'],
+        'has_vulnerabilities': any(len(d['vulnerabilities']) > 0 for d in appl['dependencies'])
+    } for appl in applications]
