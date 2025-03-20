@@ -110,7 +110,7 @@ def get_applications():
     } for appl in applications]
 
 
-@app.get("/applications/{app_id}/dependencies", response_model=List[Dependency])
+@app.get("/applications/dependencies/{app_id}", response_model=List[Dependency])
 def get_app_dependencies(app_id: str):
     appl = next((appl for appl in applications if appl['id'] == app_id), None)
     if not appl:
@@ -120,14 +120,14 @@ def get_app_dependencies(app_id: str):
              'vulnerabilities': d['vulnerabilities']} for d in appl['dependencies']]
 
 
-@app.get("/dependencies", response_model=List[Dependency])
+@app.get("/all-dependencies", response_model=List[Dependency])
 def get_dependencies():
     return [{'name': d['name'],
              'version': d['version'],
              'vulnerabilities': d['vulnerabilities']} for d in all_dependencies.values()]
 
 
-@app.get("/dependencies/{name}", response_model=List[DependencyDetail])
+@app.get("/dependencies", response_model=List[DependencyDetail])
 def get_dependency_details(name: str):
     dependencies = all_dependencies.get(name)
     if not dependencies:
