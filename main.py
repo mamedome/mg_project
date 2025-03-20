@@ -59,3 +59,42 @@ async def fetch_vulnerabilities(name: str, version: str) -> List[Dict]:
             return response.json().get('vulns', []) if response.status_code == 200 else []
         except httpx.RequestError:
             return []
+
+
+@app.post("/applications", response_model=ApplicationResponse)
+async def create_application(name: str = Form(...),
+                             description: str = Form(...),
+                             requirements_file: UploadFile = File(...)):
+    contents = await requirements_file.read()
+    dependencies = parse_requirements(contents.decode('utf-8'))
+
+    app_dependencies = []
+    for dep in dependencies:
+        key = (dep['name'], dep['version'])
+        if key not in all_dependencies:
+            if cached := cache.get(key):
+                vulns = cached
+            else:
+                vulns = await fetch_vulnerabilities(dep['name'], dep['version'])
+                cache[key] = vulns
+            all_dependencies[key] = {
+                'name': dep['name'],
+                'version': dep['version'],
+                'vulnerabilities': vulns
+            }
+        app_dependencies.append(all_dependencies[key])
+
+    app_id = str(uuid.uuid4())
+    new_app = {
+        'id': app_id,
+        'name': name,
+        'description': description,
+        'dependencies': app_dependencies
+    }
+    applications.append(new_app)
+    return {
+        'app_id': app_id,
+        'name': name,
+        'description': description,
+        'has_vulnerabilities': any(len(d['vulnerabilities']) > 0 for d in app_dependencies)
+    }
