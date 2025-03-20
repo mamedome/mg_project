@@ -128,15 +128,16 @@ def get_dependencies():
 
 
 @app.get("/dependencies", response_model=List[DependencyDetail])
-def get_dependency_details(name: str):
-    dependencies = all_dependencies.get(name)
-    if not dependencies:
+def get_dependency_details(name: str, version: str):
+    dependency = all_dependencies.get((name, version))
+    if not dependency:
         raise HTTPException(404, "Dependency not found")
 
     return [{
-        'name': dep['name'],
-        'version': dep['version'],
-        'vulnerabilities': dep['vulnerabilities'],
+        'name': dependency['name'],
+        'version': dependency['version'],
+        'vulnerabilities': dependency['vulnerabilities'],
         'used_in': [appl['name'] for appl in applications
-                    if any(d['name'] == dep['name'] and d['version'] == dep['version'] for d in appl['dependencies'])]
-    } for dep in dependencies]
+                    if any(d['name'] == dependency['name'] and d['version'] == dependency['version'] for d in
+                           appl['dependencies'])]
+    }]
