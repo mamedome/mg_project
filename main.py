@@ -6,7 +6,10 @@ import cachetools
 import httpx
 import re
 
-app = FastAPI()
+app = FastAPI(title="Python Application Vulnerability Tracking API",
+              description="a Python application that allows users to track vulnerabilities "
+                          "within their Python applications",
+              version="1.0.0")
 
 # In-memory storage
 applications = {}
@@ -33,6 +36,15 @@ class DependencyDetail(Dependency):
 
 
 def parse_requirements(requirements: str) -> List[Dict]:
+    """
+    Parse requirements string into a list of dictionaries.
+
+    Parameters:
+        requirements (str): Requirements string (read from a file, like requirements.txt)
+
+    Returns:
+        List[Dict]: List of dictionaries representing the requirements.
+    """
     dependencies = []
     for line in requirements.splitlines():
         line = line.strip()
@@ -45,6 +57,16 @@ def parse_requirements(requirements: str) -> List[Dict]:
 
 
 async def fetch_vulnerabilities(name: str, version: str) -> List[Dict]:
+    """
+    Fetch all vulnerabilities for a particular dependency
+
+    Parameters:
+        name (str): Name of the dependency
+        version (str): Version of the dependency
+
+    Returns:
+        List[Dict]: List of dictionaries representing the vulnerabilities.
+    """
     key = (name, version)
     if key in cache:
         return cache[key]
@@ -73,6 +95,16 @@ async def fetch_vulnerabilities(name: str, version: str) -> List[Dict]:
 
 
 def is_dep_vulnerable(name: str, version: str) -> bool:
+    """
+    Determine if a dependency is vulnerable
+
+    Parameters:
+        name (str): Name of the dependency
+        version (str): Version of the dependency
+
+    Returns:
+        bool: True if the dependency is vulnerable, False otherwise
+    """
     return True if len(all_dependencies[(name, version)]['vulnerabilities']) > 0 else False
 
 
@@ -80,6 +112,17 @@ def is_dep_vulnerable(name: str, version: str) -> bool:
 async def create_application(name: str = Form(...),
                              description: str = Form(...),
                              requirements_file: UploadFile = File(...)):
+    """
+    Create a new application
+
+    Parameters:
+        name (str): Name of the application
+        description (str): Description of the application
+        requirements_file (UploadFile): Requirements file
+
+    Returns:
+        ApplicationResponse: Response object for the created application
+    """
     contents = await requirements_file.read()
     deps = parse_requirements(contents.decode('utf-8'))
 
@@ -101,6 +144,12 @@ async def create_application(name: str = Form(...),
 
 @app.get("/applications", response_model=List[ApplicationResponse])
 def get_applications():
+    """
+    Get all applications and identify the vulnerable ones
+
+    Returns:
+        List[ApplicationResponse]: List of applications
+    """
     return [{
         'app_id': appl['id'],
         'name': appl['name'],
@@ -111,6 +160,15 @@ def get_applications():
 
 @app.get("/applications/dependencies/{app_id}", response_model=List[Dependency])
 def get_app_dependencies(app_id: str):
+    """
+    Get all dependencies for a specific application
+
+    Parameters:
+        app_id (str): Application ID
+
+    Returns:
+        List[Dependency]: List of dependencies of the specific application
+    """
     appl = applications.get(app_id)
     if not appl:
         raise HTTPException(404, "Application not found")
@@ -122,6 +180,12 @@ def get_app_dependencies(app_id: str):
 
 @app.get("/all-dependencies", response_model=List[Dependency])
 def get_dependencies():
+    """
+    Get all dependencies
+
+    Returns:
+        List[Dependency]: List of all dependencies with the vulnerable ones identified
+    """
     return [{'name': d['name'],
              'version': d['version'],
              'vulnerabilities': d['vulnerabilities'],
@@ -130,6 +194,16 @@ def get_dependencies():
 
 @app.get("/dependencies", response_model=List[DependencyDetail])
 def get_dependency_details(name: str, version: str):
+    """
+    Get details about a specific dependency, including usage and associated vulnerabilities
+
+    Parameters:
+         name (str): Name of the dependency
+         version (str): Version of the dependency
+
+    Returns:
+        List[DependencyDetail]: List of details about a specific dependency
+    """
     dependency = all_dependencies.get((name, version))
     if not dependency:
         raise HTTPException(404, "Dependency not found")
