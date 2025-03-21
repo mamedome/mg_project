@@ -9,7 +9,7 @@ import re
 app = FastAPI()
 
 # In-memory storage
-applications = []
+applications = {}
 all_dependencies = {}
 cache = cachetools.TTLCache(maxsize=1000, ttl=86400)  # Data remains in cache for 24 hours
 
@@ -89,13 +89,8 @@ async def create_application(name: str = Form(...),
         app_dependencies.append({'name': dep['name'], 'version': dep['version'], 'vulnerabilities': vulns})
 
     app_id = str(uuid.uuid4())
-    new_app = {
-        'id': app_id,
-        'name': name,
-        'description': description,
-        'dependencies': app_dependencies
-    }
-    applications.append(new_app)
+    applications[app_id] = {'id': app_id, 'name': name, 'description': description, 'dependencies': app_dependencies}
+
     return {
         'app_id': app_id,
         'name': name,
@@ -111,12 +106,12 @@ def get_applications():
         'name': appl['name'],
         'description': appl['description'],
         'has_vulnerabilities': any(len(d['vulnerabilities']) > 0 for d in appl['dependencies'])
-    } for appl in applications]
+    } for appl in applications.values()]
 
 
 @app.get("/applications/dependencies/{app_id}", response_model=List[Dependency])
 def get_app_dependencies(app_id: str):
-    appl = next((appl for appl in applications if appl['id'] == app_id), None)
+    appl = applications.get(app_id)
     if not appl:
         raise HTTPException(404, "Application not found")
     return [{'name': d['name'],
@@ -144,7 +139,7 @@ def get_dependency_details(name: str, version: str):
         'version': dependency['version'],
         'vulnerabilities': dependency['vulnerabilities'],
         'vulnerable': is_dep_vulnerable(dependency['name'], dependency['version']),
-        'used_in': [appl['name'] for appl in applications
+        'used_in': [appl['name'] for appl in applications.values()
                     if any(d['name'] == dependency['name'] and d['version'] == dependency['version'] for d in
                            appl['dependencies'])]
     }]
