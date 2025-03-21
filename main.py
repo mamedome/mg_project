@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, HTTPException, File, Form
+from fastapi import FastAPI, UploadFile, HTTPException, File, Form, dependencies
 from pydantic import BaseModel
 from typing import List, Dict
 import uuid
@@ -24,6 +24,7 @@ class ApplicationResponse(BaseModel):
 class Dependency(BaseModel):
     name: str
     version: str
+    vulnerable: bool
     vulnerabilities: List[Dict]
 
 
@@ -44,21 +45,34 @@ def parse_requirements(requirements: str) -> List[Dict]:
 
 
 async def fetch_vulnerabilities(name: str, version: str) -> List[Dict]:
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                "https://api.osv.dev/v1/query",
-                json={
-                    "version": version,
-                    "package": {
-                        "name": name,
-                        "ecosystem": "PyPI"
+    key = (name, version)
+    if key in cache:
+        return cache[key]
+    else:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    "https://api.osv.dev/v1/query",
+                    json={
+                        "version": version,
+                        "package": {
+                            "name": name,
+                            "ecosystem": "PyPI"
+                        }
                     }
-                }
-            )
-            return response.json().get('vulns', []) if response.status_code == 200 else []
-        except httpx.RequestError:
-            return []
+                )
+                if response.status_code == 200:
+                    vulns = response.json().get('vulns', [])
+                    cache[key] = vulns
+                    return vulns
+                else:
+                    return []
+            except httpx.RequestError:
+                return []
+
+
+def is_dep_vulnerable(name: str, version: str) -> bool:
+    return True if len(all_dependencies[(name, version)]['vulnerabilities']) > 0 else False
 
 
 @app.post("/applications", response_model=ApplicationResponse)
@@ -66,22 +80,16 @@ async def create_application(name: str = Form(...),
                              description: str = Form(...),
                              requirements_file: UploadFile = File(...)):
     contents = await requirements_file.read()
-    dependencies = parse_requirements(contents.decode('utf-8'))
+    deps = parse_requirements(contents.decode('utf-8'))
 
     app_dependencies = []
-    for dep in dependencies:
+    for dep in deps:
         key = (dep['name'], dep['version'])
-        if key not in all_dependencies:
-            if cached := cache.get(key):
-                vulns = cached
-            else:
-                vulns = await fetch_vulnerabilities(dep['name'], dep['version'])
-                cache[key] = vulns
-            all_dependencies[key] = {
-                'name': dep['name'],
-                'version': dep['version'],
-                'vulnerabilities': vulns
-            }
+        vulns = await fetch_vulnerabilities(dep['name'], dep['version'])
+        all_dependencies[key] = {
+            'name': dep['name'],
+            'version': dep['version'],
+            'vulnerabilities': vulns}
         app_dependencies.append(all_dependencies[key])
 
     app_id = str(uuid.uuid4())
@@ -117,14 +125,16 @@ def get_app_dependencies(app_id: str):
         raise HTTPException(404, "Application not found")
     return [{'name': d['name'],
              'version': d['version'],
-             'vulnerabilities': d['vulnerabilities']} for d in appl['dependencies']]
+             'vulnerabilities': d['vulnerabilities'],
+             'vulnerable': is_dep_vulnerable(d['name'], d['version'])} for d in appl['dependencies']]
 
 
 @app.get("/all-dependencies", response_model=List[Dependency])
 def get_dependencies():
     return [{'name': d['name'],
              'version': d['version'],
-             'vulnerabilities': d['vulnerabilities']} for d in all_dependencies.values()]
+             'vulnerabilities': d['vulnerabilities'],
+             'vulnerable': is_dep_vulnerable(d['name'], d['version'])} for d in all_dependencies.values()]
 
 
 @app.get("/dependencies", response_model=List[DependencyDetail])
@@ -137,6 +147,7 @@ def get_dependency_details(name: str, version: str):
         'name': dependency['name'],
         'version': dependency['version'],
         'vulnerabilities': dependency['vulnerabilities'],
+        'vulnerable': is_dep_vulnerable(dependency['name'], dependency['version']),
         'used_in': [appl['name'] for appl in applications
                     if any(d['name'] == dependency['name'] and d['version'] == dependency['version'] for d in
                            appl['dependencies'])]
