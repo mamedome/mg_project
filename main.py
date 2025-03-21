@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, HTTPException, File, Form, dependencies
+from fastapi import FastAPI, UploadFile, HTTPException, File, Form
 from pydantic import BaseModel
 from typing import List, Dict
 import uuid
@@ -11,7 +11,7 @@ app = FastAPI()
 # In-memory storage
 applications = []
 all_dependencies = {}
-cache = cachetools.TTLCache(maxsize=1000, ttl=3600)
+cache = cachetools.TTLCache(maxsize=1000, ttl=86400)  # Data remains in cache for 24 hours
 
 
 class ApplicationResponse(BaseModel):
@@ -64,6 +64,7 @@ async def fetch_vulnerabilities(name: str, version: str) -> List[Dict]:
                 if response.status_code == 200:
                     vulns = response.json().get('vulns', [])
                     cache[key] = vulns
+                    all_dependencies[key] = {'name': name, 'version': version, 'vulnerabilities': vulns}
                     return vulns
                 else:
                     return []
@@ -84,13 +85,8 @@ async def create_application(name: str = Form(...),
 
     app_dependencies = []
     for dep in deps:
-        key = (dep['name'], dep['version'])
         vulns = await fetch_vulnerabilities(dep['name'], dep['version'])
-        all_dependencies[key] = {
-            'name': dep['name'],
-            'version': dep['version'],
-            'vulnerabilities': vulns}
-        app_dependencies.append(all_dependencies[key])
+        app_dependencies.append({'name': dep['name'], 'version': dep['version'], 'vulnerabilities': vulns})
 
     app_id = str(uuid.uuid4())
     new_app = {
